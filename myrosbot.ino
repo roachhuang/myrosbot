@@ -37,9 +37,10 @@ volatile uint16_t rpmL, rpmR;
 //   = 0.068 * RPM * 0.10472
 // RPM = V * 140.43050375
 #define SPOKE 20
-#define TICK2RAD ((2 * PI) / SPOKE)     // 2 * pi / ENCODER_TICK
+#define TICK2RAD ((2 * PI) / SPOKE)    // 2 * pi / ENCODER_TICK
 #define DEG2RAD(x) (x * 0.01745329252) // *PI/180
 #define RAD2DEG(x) (x * 57.2957795131) // *180/PI
+#deinfe tickPerMeter((2.0 * PI * r) / SPOKE)
 
 //Specify the links and initial tuning parameters
 // kpL and kpR?
@@ -60,9 +61,17 @@ void encoderR() // counts from the speed sensor
 void timerIsr()
 {
   Timer1.detachInterrupt(); //stop the timer
-  rpmL = counterL * 3;     // (counter/spoke) * 60
+  rpmL = counterL * 3;      // (counter/spoke) * 60
   rpmR = counterR * 3;
-  counterL = counterR = 0; //  reset counter to zero
+  dL = counterL * tickPerMeter;
+  dR = counterR * tickPerMeter;
+  counterL = counterR = 0;  //  reset counter to zero asap
+  dC = (dR + dL) / 2;
+  phi = (dr - dL) / L;
+  currentPhi = prevPhi + phi;
+  currentX = preX + (dC * cos(w));
+  currentY = preY + (dC * cos(w));
+
   Timer1.attachInterrupt(timerIsr); //enable the timer
 }
 
