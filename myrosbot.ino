@@ -154,10 +154,10 @@ void setup()
   pinMode(ECHO, INPUT);
   range_timer = 0;
   range_msg.radiation_type = sensor_msgs::Range::INFRARED;
-  range_msg.header.frame_id = "utl_ranger";
-  range_msg.field_of_view = 0.01;
-  range_msg.min_range = 0.03;
-  range_msg.max_range = 0.4; // in meter
+  range_msg.header.frame_id = "utlrasound";
+  range_msg.field_of_view = 0.10000000149;
+  range_msg.min_range = 0.02;
+  range_msg.max_range = 4; // in meter
 
   // init motors
   pinMode(IN1, OUTPUT);
