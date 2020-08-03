@@ -1,3 +1,18 @@
+
+/*
+ * rosserial Subscriber Example
+ * roscore
+ * rosrun rosserial_python serial_node.py /dev/ttyACM0
+ * rosrun rosserial_python serial_node.py /dev/ttyUSB0
+ * 
+ * rosrun teleop_twist_keyboard teleop_twist_keyboard.py
+ */
+
+#include <ros.h>
+#include <ros/time.h>
+#include <sensor_msgs/Range.h>
+#include <geometry_msgs/Twist.h>
+
 #include "TimerOne.h"
 #include <PID_v1.h>
 
@@ -21,6 +36,10 @@ const uint8_t ENB = 11;
 const uint8_t IN3 = 4;
 const uint8_t IN4 = 5;
 
+#define TRIG 2
+#define ECHO 3
+#define LASH 15   // damage distance of obstacle
+
 const uint8_t interruptPinL = 2;
 const uint8_t interruptPinR = 3;
 //Define Variables we'll be connecting to
@@ -41,13 +60,13 @@ volatile uint16_t rpmL, rpmR;
 #define DEG2RAD(x) (x * 0.01745329252) // *PI/180
 #define RAD2DEG(x) (x * 57.2957795131) // *180/PI
 #deinfe tickPerMeter((2.0 * PI * r) / SPOKE)
-struct xy-theta
+struct xy - theta
 {
   int x;
   int y;
   int theta;
 };
-xy-theta pose;
+xy - theta pose;
 
 //Specify the links and initial tuning parameters
 // kpL and kpR?
@@ -74,21 +93,72 @@ void timerIsr()
   rpmR = counterR * 3;
   dL = counterL * tickPerMeter;
   dR = counterR * tickPerMeter;
-  counterL = counterR = 0;  //  reset counter to zero asap
+  counterL = counterR = 0; //  reset counter to zero asap
 
-  dC = (dR + dL) / 2; 
+  dC = (dR + dL) / 2;
   pose.x = pose.x + (dC * cos(pose.theta));
-  pose.y = pose.y + (dC * cos(pose.theta)); 
+  pose.y = pose.y + (dC * cos(pose.theta));
   pose.theta = pose.theta + (dr - dL) / L;
   // constrain theta in [-pi, pi]
-  pose.theta = atan2(sin(pose.theta), cos(pose.theta));  
+  pose.theta = atan2(sin(pose.theta), cos(pose.theta));
 
   Timer1.attachInterrupt(timerIsr); //enable the timer
+}
+
+void cmd_velCb(const onst geometry_msgs::Twist &cmd_vel)
+{
+  double v, w;
+  v = cmd_vel.linear.x;
+  w = cmd_vel.angular.z;
+  Serial.print("cmd_vel: ")
+      Serial.println(v);
+  Serial.println(w);
+  // uni_to_diff to RPM
+  SetpointL = (((2 * v) - (w * L)) / (2 * r)) * 9.5493;
+  SetpointR = (((2 * v) + (w * L)) / (2 * r)) * 9.5493;
+}
+
+ros::NodeHandle nh;
+sensor_msgs::Range range_msg;
+ros::Publisher pub_range("range_data", &range_msg);
+ros::Subscriber<geometry_msgs::Twist> sub("cmd_vel", &cmd_velCb);
+
+unsigned long range_timer;
+
+/*
+ * getRange() - samples the analog input from the ranger
+ * and converts it into meters.  
+ * 
+ * NOTE: This function is only applicable to the HC-SR04 !!
+ * Using this function with other Rangers will provide incorrect readings.
+ */
+int getRange()
+{
+  digitalWrite(TRIG, HIGH);
+  digitalWrite(TRIG, LOW);
+  int dist = pulseIn(ECHO, HIGH) / 50;
+  return dist
 }
 
 void setup()
 {
   Serial.begin(9600);
+
+  // init ros
+  nh.initNode();
+  nh.advertise(pub_range);
+  nh.subscribe(sub);
+
+  // init ir_ranger
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+  range_timer = 0;
+  range_msg.radiation_type = sensor_msgs::Range::INFRARED;
+  range_msg.header.frame_id = "utl_ranger";
+  range_msg.field_of_view = 0.01;
+  range_msg.min_range = 0.03;
+  range_msg.max_range = 0.4; // in meter
+
   // init motors
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
@@ -120,9 +190,10 @@ void setup()
 
 void loop()
 {
-  double v;
   // int potvalue = analogRead(1);  // Potentiometer connected to Pin A1
   // int motorspeed = map(potvalue, 0, 680, 255, 0);
+
+  /*
   if (Serial.available())
   {
     v = Serial.parseInt();
@@ -135,6 +206,21 @@ void loop()
     analogWrite(ENA, (int)SetpointL);
     analogWrite(ENB, (int)SetpointL);
   }
+  */
+  // setpoint are set in cmd_velCb
+  // SetpointL = calSetpointL(v, w);
+  // SetpointR = calSetpointR(v, w);
+
+  // publish the range value every 50 milliseconds
+  //   since it takes that long for the sensor to stabilize
+  if ((millis() - range_timer) > 50)
+  {
+    range_msg.range = getRange();
+    range_msg.header.stamp = nh.now();
+    pub_range.publish(&range_msg);
+    range_timer = millis();
+  }
+
   InputL = rpmL;
   InputR = rpmR;
 
@@ -150,6 +236,9 @@ void loop()
   Serial.println(OutputL, DEC);
   Serial.print("OutputR: ");
   Serial.println(OutputR, DEC);
+
+  nh.spinOnce();
+  delay(10);
 }
 
 // input v in m/s, ret rpm
