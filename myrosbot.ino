@@ -41,6 +41,13 @@ volatile uint16_t rpmL, rpmR;
 #define DEG2RAD(x) (x * 0.01745329252) // *PI/180
 #define RAD2DEG(x) (x * 57.2957795131) // *180/PI
 #deinfe tickPerMeter((2.0 * PI * r) / SPOKE)
+struct xy-theta
+{
+  int x;
+  int y;
+  int theta;
+};
+xy-theta pose;
 
 //Specify the links and initial tuning parameters
 // kpL and kpR?
@@ -60,17 +67,21 @@ void encoderR() // counts from the speed sensor
 
 void timerIsr()
 {
+  float dC, dL, dR;
+
   Timer1.detachInterrupt(); //stop the timer
   rpmL = counterL * 3;      // (counter/spoke) * 60
   rpmR = counterR * 3;
   dL = counterL * tickPerMeter;
   dR = counterR * tickPerMeter;
   counterL = counterR = 0;  //  reset counter to zero asap
-  dC = (dR + dL) / 2;
-  phi = (dr - dL) / L;
-  currentPhi = prevPhi + phi;
-  currentX = preX + (dC * cos(w));
-  currentY = preY + (dC * cos(w));
+
+  dC = (dR + dL) / 2; 
+  pose.x = pose.x + (dC * cos(pose.theta));
+  pose.y = pose.y + (dC * cos(pose.theta)); 
+  pose.theta = pose.theta + (dr - dL) / L;
+  // constrain theta in [-pi, pi]
+  pose.theta = atan2(sin(pose.theta), cos(pose.theta));  
 
   Timer1.attachInterrupt(timerIsr); //enable the timer
 }
@@ -86,6 +97,7 @@ void setup()
   pinMode(IN4, OUTPUT);
   pinMode(ENB, OUTPUT);
   rpmL = rpmR = counterL = counterR = 0;
+  pose.x = pose.y = pose.theta = 0;
 
   //  init encoders
   pinMode(interruptPinL, INPUT_PULLUP);
@@ -156,7 +168,8 @@ double calSetpointR(double v, double omega)
   double Vr;
   Vr = ((2 * v) + (omega * L)) / (2 * r); // now Vr is rad/s, r and L are in meter
   // RPM = (60/2*pi*r)*v
-  return (Vr / 0.10472); // new v linear is Vr*r = m/s
+  // return (Vr / 0.10472); // new v linear is Vr*r = m/s
+  return Vr * 9.5493;
 }
 
 void stop()
