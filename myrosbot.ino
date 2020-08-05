@@ -1,12 +1,12 @@
 
 /*
- * rosserial Subscriber Example
- * roscore
- * rosrun rosserial_python serial_node.py /dev/ttyACM0
- * rosrun rosserial_python serial_node.py /dev/ttyUSB0
- * 
- * rosrun teleop_twist_keyboard teleop_twist_keyboard.py
- */
+   rosserial Subscriber Example
+   roscore
+   rosrun rosserial_python serial_node.py /dev/ttyACM0
+   rosrun rosserial_python serial_node.py /dev/ttyUSB0
+
+   rosrun teleop_twist_keyboard teleop_twist_keyboard.py
+*/
 
 #include <ros.h>
 #include <ros/time.h>
@@ -59,14 +59,14 @@ volatile uint16_t rpmL, rpmR;
 #define TICK2RAD ((2 * PI) / SPOKE)    // 2 * pi / ENCODER_TICK
 #define DEG2RAD(x) (x * 0.01745329252) // *PI/180
 #define RAD2DEG(x) (x * 57.2957795131) // *180/PI
-#deinfe tickPerMeter((2.0 * PI * r) / SPOKE)
-struct xy - theta
+#define tickPerMeter ((2.0 * PI * r) / SPOKE)
+struct xy_theta
 {
   int x;
   int y;
   int theta;
 };
-xy - theta pose;
+xy_theta pose;
 
 //Specify the links and initial tuning parameters
 // kpL and kpR?
@@ -98,20 +98,20 @@ void timerIsr()
   dC = (dR + dL) / 2;
   pose.x = pose.x + (dC * cos(pose.theta));
   pose.y = pose.y + (dC * cos(pose.theta));
-  pose.theta = pose.theta + (dr - dL) / L;
+  pose.theta = pose.theta + (dR - dL) / L;
   // constrain theta in [-pi, pi]
   pose.theta = atan2(sin(pose.theta), cos(pose.theta));
 
   Timer1.attachInterrupt(timerIsr); //enable the timer
 }
 
-void cmd_velCb(const onst geometry_msgs::Twist &cmd_vel)
+void cmd_velCb(const geometry_msgs::Twist &cmd_vel)
 {
   double v, w;
   v = cmd_vel.linear.x;
   w = cmd_vel.angular.z;
-  Serial.print("cmd_vel: ")
-      Serial.println(v);
+  Serial.print("cmd_vel: ");
+  Serial.println(v);
   Serial.println(w);
   // uni_to_diff to RPM
   SetpointL = (((2 * v) - (w * L)) / (2 * r)) * 9.5493;
@@ -126,38 +126,39 @@ ros::Subscriber<geometry_msgs::Twist> sub("cmd_vel", &cmd_velCb);
 unsigned long range_timer;
 
 /*
- * getRange() - samples the analog input from the ranger
- * and converts it into meters.  
- * 
- * NOTE: This function is only applicable to the HC-SR04 !!
- * Using this function with other Rangers will provide incorrect readings.
- */
+   getRange() - samples the analog input from the ranger
+   and converts it into meters.
+
+   NOTE: This function is only applicable to the HC-SR04 !!
+   Using this function with other Rangers will provide incorrect readings.
+*/
 int getRange()
 {
   digitalWrite(TRIG, HIGH);
   digitalWrite(TRIG, LOW);
   int dist = pulseIn(ECHO, HIGH) / 50;
-  return dist
+  return dist;
 }
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(57600);
 
   // init ros
   nh.initNode();
-  nh.advertise(pub_range);
+  // nh.advertise(pub_range);
   nh.subscribe(sub);
 
-  // init ir_ranger
-  pinMode(TRIG, OUTPUT);
-  pinMode(ECHO, INPUT);
-  range_timer = 0;
-  range_msg.radiation_type = sensor_msgs::Range::INFRARED;
-  range_msg.header.frame_id = "utlrasound";
-  range_msg.field_of_view = 0.10000000149;
-  range_msg.min_range = 0.02;
-  range_msg.max_range = 4; // in meter
+  /* init ir_ranger
+    pinMode(TRIG, OUTPUT);
+    pinMode(ECHO, INPUT);
+    range_timer = 0;
+    range_msg.radiation_type = sensor_msgs::Range::INFRARED;
+    range_msg.header.frame_id = "utlrasound";
+    range_msg.field_of_view = 0.10000000149;
+    range_msg.min_range = 0.02;
+    range_msg.max_range = 4; // in meter
+  */
 
   // init motors
   pinMode(IN1, OUTPUT);
@@ -190,12 +191,9 @@ void setup()
 
 void loop()
 {
-  // int potvalue = analogRead(1);  // Potentiometer connected to Pin A1
-  // int motorspeed = map(potvalue, 0, 680, 255, 0);
-
   /*
-  if (Serial.available())
-  {
+    if (Serial.available())
+    {
     v = Serial.parseInt();
     if (Serial.peek() == '\n')
       Serial.read(); // consume LF
@@ -205,43 +203,46 @@ void loop()
     Serial.println(SetpointL);
     analogWrite(ENA, (int)SetpointL);
     analogWrite(ENB, (int)SetpointL);
-  }
+    }
+    setpoint are set in cmd_velCb
+    SetpointL = calSetpointL(v, w);
+    SetpointR = calSetpointR(v, w);
   */
-  // setpoint are set in cmd_velCb
-  // SetpointL = calSetpointL(v, w);
-  // SetpointR = calSetpointR(v, w);
 
-  // publish the range value every 50 milliseconds
-  //   since it takes that long for the sensor to stabilize
-  if ((millis() - range_timer) > 50)
-  {
+  /* publish the range value every 50 milliseconds
+    //   since it takes that long for the sensor to stabilize
+    if ((millis() - range_timer) > 50)
+    {
     range_msg.range = getRange();
     range_msg.header.stamp = nh.now();
     pub_range.publish(&range_msg);
     range_timer = millis();
-  }
+    }
+  */
 
   InputL = rpmL;
   InputR = rpmR;
-
-  Serial.print("inputL: ");
-  Serial.println(InputL, DEC);
-  Serial.print("inputR: ");
-  Serial.println(InputR, DEC);
+  /*
+    Serial.print("inputL: ");
+    Serial.println(InputL, DEC);
+    Serial.print("inputR: ");
+    Serial.println(InputR, DEC);
+  */
   myPidL.Compute();
   myPidR.Compute();
   analogWrite(ENA, (int)OutputL);
   analogWrite(ENB, (int)OutputR);
-  Serial.print("outPutL: ");
-  Serial.println(OutputL, DEC);
-  Serial.print("OutputR: ");
-  Serial.println(OutputR, DEC);
-
+  /*
+    Serial.print("outPutL: ");
+    Serial.println(OutputL, DEC);
+    Serial.print("OutputR: ");
+    Serial.println(OutputR, DEC);
+  */
   nh.spinOnce();
   delay(10);
 }
 
-// input v in m/s, ret rpm
+/* input v in m/s, ret rpm
 double calSetpointL(double v, double omega)
 {
   double Vl;
@@ -260,6 +261,7 @@ double calSetpointR(double v, double omega)
   // return (Vr / 0.10472); // new v linear is Vr*r = m/s
   return Vr * 9.5493;
 }
+*/
 
 void stop()
 {
