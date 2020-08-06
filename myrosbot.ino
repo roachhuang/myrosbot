@@ -110,9 +110,7 @@ void cmd_velCb(const geometry_msgs::Twist &cmd_vel)
   double v, w;
   v = cmd_vel.linear.x;
   w = cmd_vel.angular.z;
-  Serial.print("cmd_vel: ");
-  Serial.println(v);
-  Serial.println(w);
+ 
   // uni_to_diff to RPM
   SetpointL = (((2 * v) - (w * L)) / (2 * r)) * 9.5493;
   SetpointR = (((2 * v) + (w * L)) / (2 * r)) * 9.5493;
@@ -142,7 +140,7 @@ int getRange()
 
 void setup()
 {
-  Serial.begin(57600);
+  // Serial.begin(57600);
 
   // init ros
   nh.initNode();
