@@ -16,7 +16,7 @@
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Odometry.h>
 
-#include "TimerOne.h"
+// #include "TimerOne.h"
 #include <PID_v1.h>
 
 /*
@@ -48,6 +48,7 @@ const uint8_t IN4 = 5;
 #define TRIG 2
 #define ECHO 3
 #define LASH 15   // damage distance of obstacle
+#define SAMPLE_TIME 100  // 100ms
 
 const uint8_t interruptPinL = 2;
 const uint8_t interruptPinR = 3;
@@ -56,6 +57,7 @@ volatile unsigned int counterL, counterR = 0;
 double SetpointL, InputL, OutputL;
 double SetpointR, InputR, OutputR;
 volatile uint16_t rpmL, rpmR;
+unsinged long lastMs = 0;
 
 /*******************************************************************************
   Velocity parameters
@@ -71,13 +73,13 @@ volatile uint16_t rpmL, rpmR;
 #define tickPerMeter ((2.0 * PI * r) / SPOKE)
 typedef struct
 {
-    int x;
-    int y;
-    int theta;
+    float x;
+    float y;
+    float theta;
 } xy_theta;
 
 xy_theta pose;
-double dC=0, theta = 0;
+double actVel=0, theta = 0;
 //Specify the links and initial tuning parameters
 // kpL and kpR?
 double Kp = 0.53, Ki = 0.14, Kd = 0;
@@ -94,18 +96,19 @@ void encoderR() // counts from the speed sensor
     counterR++; // increase +1 the counter value
 }
 
-void timerIsr()
+void Odom()
 {
-    double dL, dR;
+    double dL, dR, dC;
 
-    Timer1.detachInterrupt(); //stop the timer
-    rpmL = counterL * 3;      // (counter/spoke) * 60
-    rpmR = counterR * 3;
+    // Timer1.detachInterrupt(); //stop the timer
+    rpmL = counterL * (3000/SAMPLE_TIME);      // (counter/spoke) * 60s * 1000ms/SAMPLE_TIME
+    rpmR = counterR * (3000/SAMPLE_TIME);
     dL = counterL * tickPerMeter;
     dR = counterR * tickPerMeter;
     counterL = counterR = 0; //  reset counter to zero asap
 
     dC = (dR + dL) / 2.0;
+    actVel = dC * (1000/SAMPLE_TIME);  // m/s 
     pose.x += dC * cos(pose.theta);
     pose.y += dC * sin(pose.theta);
     theta = (dR - dL) / L;
@@ -113,7 +116,7 @@ void timerIsr()
     // constrain theta in [-pi, pi]
     pose.theta = atan2(sin(pose.theta), cos(pose.theta));
 
-    Timer1.attachInterrupt(timerIsr); //enable the timer
+    // Timer1.attachInterrupt(timerIsr); //enable the timer
 }
 
 void cmd_velCb(const geometry_msgs::Twist &cmd_vel)
@@ -189,15 +192,15 @@ void setup()
     //  init encoders
     pinMode(interruptPinL, INPUT_PULLUP);
     pinMode(interruptPinR, INPUT_PULLUP);
-    Timer1.initialize(1000000);                                              // set timer for 1sec
+    // Timer1.initialize(1000000);                                              // set timer for 1sec
     attachInterrupt(digitalPinToInterrupt(interruptPinL), encoderL, RISING); // increase counter when speed sensor pin goes High
     attachInterrupt(digitalPinToInterrupt(interruptPinR), encoderR, RISING); // increase counter when speed sensor pin goes High
-    Timer1.attachInterrupt(timerIsr);                                        // enable the timer
+    // Timer1.attachInterrupt(timerIsr);                                        // enable the timer
 
     //  init PIDs
-    myPidL.SetSampleTime(1000); // adj this number to half makes difference. why?
+    myPidL.SetSampleTime(SAMPLE_TIME); // adj this number to half makes difference. why?
     myPidL.SetMode(AUTOMATIC);
-    myPidR.SetSampleTime(1000); // adj this number to half makes difference. why?
+    myPidR.SetSampleTime(SAMPLE_TIME); // adj this number to half makes difference. why?
     myPidR.SetMode(AUTOMATIC);
 
     analogWrite(ENA, 0); // set speed of motor (0-255
@@ -227,55 +230,54 @@ void loop()
 
     // publish the range value every 50 milliseconds
       //   since it takes that long for the sensor to stabilize
-      if ((millis() - range_timer) > 100)
-      {
-      /*
-      range_msg.range = getRange();
-      range_msg.header.stamp = nh.now();
-      pub_range.publish(&range_msg);
-      
-      */
-      t.transform.translation.x = pose.x;
-      t.transform.translation.y = pose.y;
-      t.transform.rotation = tf::createQuaternionFromYaw(pose.theta);
+    if ((millis() - lastMs) > SAMPLE_TIME) // run pid every 100ms
+    {
+        InputL = rpmL;
+        InputR = rpmR;
+        myPidL.Compute();
+        myPidR.Compute();
+        analogWrite(ENA, (int)OutputL);
+        analogWrite(ENB, (int)OutputR);
+        /*
+        range_msg.range = getRange();
+        range_msg.header.stamp = nh.now();
+        pub_range.publish(&range_msg);
+        */
+        odom();
+        t.transform.translation.x = pose.x;
+        t.transform.translation.y = pose.y;
+        t.transform.rotation = tf::createQuaternionFromYaw(pose.theta);
 
-      odom.header.stamp = nh.now();
-      odom.pose.pose.position.x = pose.x;
-      odom.pose.pose.position.y = pose.y;
-      odom.pose.pose.position.z = pose.theta;
-      odom.pose.pose.orientation = odom_quat;
+        odom.header.stamp = nh.now();
+        odom.pose.pose.position.x = pose.x;
+        odom.pose.pose.position.y = pose.y;
+        odom.pose.pose.position.z = pose.theta;
+        odom.pose.pose.orientation = odom_quat;
 
-      // output Velocity
-      odom.twist.twist.linear.x = dC;
-      odom.twist.twist.linear.y = 0;
-      odom.twist.twist.angular.z = theta;
-      pub_odom.publish(&odom);
-      broadcaster.sendTransform(t);
-      range_timer = millis();
-      }
-    
-
-    InputL = rpmL;
-    InputR = rpmR;
+        // output Velocity
+        odom.twist.twist.linear.x = actVel;
+        odom.twist.twist.linear.y = 0;
+        odom.twist.twist.angular.z = theta;
+        pub_odom.publish(&odom);
+        broadcaster.sendTransform(t);
+        lastMs = millis();
+    }
     /*
       Serial.print("inputL: ");
       Serial.println(InputL, DEC);
       Serial.print("inputR: ");
       Serial.println(InputR, DEC);
     */
-    myPidL.Compute();
-    myPidR.Compute();
-    analogWrite(ENA, (int)OutputL);
-    analogWrite(ENB, (int)OutputR);
+
     /*
       Serial.print("outPutL: ");
       Serial.println(OutputL, DEC);
       Serial.print("OutputR: ");
       Serial.println(OutputR, DEC);
     */
-   
+
     nh.spinOnce();
-    delay(10);
+    // delay(10);
 }
 /*
 double calSetpointR(double v, double omega)
